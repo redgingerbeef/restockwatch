@@ -1,15 +1,23 @@
 """
-checker.py — Stock checker using requests (no browser needed).
-Faster and works on any server without Chromium installed.
+checker.py — Stock checker using requests + curl_cffi for Cloudflare-protected sites.
+- Regular requests: PCC, Walmart, Amazon
+- curl_cffi (browser TLS fingerprint): EB Games (Cloudflare)
 """
 
 import requests
 import re
+
+try:
+    from curl_cffi import requests as cf_requests
+    CURL_AVAILABLE = True
+except ImportError:
+    CURL_AVAILABLE = False
+
 from config import RETAILER_CONFIGS
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language": "en-CA,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
@@ -22,7 +30,6 @@ SESSION.headers.update(HEADERS)
 def check_online(product: dict) -> dict:
     retailer_key = product["retailer"]
     url = product["url"]
-    cfg = RETAILER_CONFIGS.get(retailer_key, {})
 
     result = {
         "online_status": "unknown",
@@ -32,13 +39,24 @@ def check_online(product: dict) -> dict:
     }
 
     try:
-        resp = SESSION.get(url, timeout=15, allow_redirects=True)
+        # EB Games uses Cloudflare — use curl_cffi to mimic real browser TLS
+        if retailer_key == "ebgames_ca":
+            if not CURL_AVAILABLE:
+                result["online_status"] = "error"
+                result["error"] = "curl_cffi not installed"
+                return result
+            resp = cf_requests.get(url, impersonate="chrome124", timeout=20)
+        else:
+            resp = SESSION.get(url, timeout=15, allow_redirects=True)
 
         if resp.status_code == 404:
             result["online_status"] = "error"
             result["error"] = "Page not found (404)"
             return result
-
+        if resp.status_code == 403:
+            result["online_status"] = "error"
+            result["error"] = "Blocked (403) — Cloudflare"
+            return result
         if resp.status_code != 200:
             result["online_status"] = "error"
             result["error"] = f"HTTP {resp.status_code}"
@@ -55,6 +73,7 @@ def check_online(product: dict) -> dict:
         elif retailer_key == "amazon_ca":
             result = _check_amazon(text, result)
         else:
+            cfg = RETAILER_CONFIGS.get(retailer_key, {})
             oos = next((t for t in cfg.get("oos_text", []) if t.lower() in text), None)
             ins = next((t for t in cfg.get("in_stock_text", []) if t.lower() in text), None)
             if ins and not oos:
@@ -67,27 +86,20 @@ def check_online(product: dict) -> dict:
                 result["online_status"] = "unknown"
                 result["online_message"] = "Could not determine status"
 
-    except requests.exceptions.Timeout:
-        result["online_status"] = "error"
-        result["error"] = "Request timed out"
-    except requests.exceptions.ConnectionError:
-        result["online_status"] = "error"
-        result["error"] = "Connection error"
     except Exception as e:
         result["online_status"] = "error"
-        result["error"] = str(e)[:100]
+        result["error"] = str(e)[:120]
 
     return result
 
 
 def _check_walmart(text: str, result: dict) -> dict:
     if '"availabilityStatus":"IN_STOCK"' in text or \
-       ("add to cart" in text and "out of stock" not in text):
+       ("add to cart" in text and "out of stock" not in text and "unavailable" not in text):
         result["online_status"] = "in_stock"
         result["online_message"] = "In stock online"
-    elif "out of stock" in text or \
-         '"availabilityStatus":"OUT_OF_STOCK"' in text or \
-         "check store availability" in text:
+    elif "out of stock" in text or '"availabilityStatus":"OUT_OF_STOCK"' in text or \
+         "currently unavailable" in text:
         result["online_status"] = "out_of_stock"
         result["online_message"] = "Out of stock"
     else:
@@ -111,7 +123,8 @@ def _check_pcc(text: str, result: dict) -> dict:
 
 def _check_ebgames(text: str, result: dict) -> dict:
     if ("add to cart" in text or "buy now" in text) and \
-       "out of stock" not in text and "not available" not in text:
+       "out of stock" not in text and "not available" not in text and \
+       "sold out" not in text:
         result["online_status"] = "in_stock"
         result["online_message"] = "Available online"
     elif "out of stock" in text or "not available" in text or "sold out" in text:
