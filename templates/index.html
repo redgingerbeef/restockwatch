@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RestockWatch — Canadian Pokémon TCG Alerts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Fira+Code:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #07090f;
+  --bg2:       #0d1017;
+  --surface:   #111520;
+  --surface2:  #161b27;
+  --border:    #1e2536;
+  --border2:   #252d42;
+  --text:      #dde3f0;
+  --muted:     #5a6480;
+  --muted2:    #3d455e;
+
+  --green:     #0ff07a;
+  --green-bg:  #0ff07a14;
+  --green-glow: 0 0 20px #0ff07a33;
+  --red:       #ff4560;
+  --red-bg:    #ff456014;
+  --yellow:    #ffc947;
+  --yellow-bg: #ffc94714;
+  --blue:      #4d9eff;
+
+  --pcc:   #e3350d;
+  --wmt:   #0071ce;
+  --ebg:   #ff6a00;
+  --cst:   #005daa;
+  --bby:   #1f49a0;
+  --tru:   #e4002b;
+  --amz:   #ff9900;
+
+  --font-display: 'Syne', sans-serif;
+  --font-mono:    'Fira Code', monospace;
+  --radius:  10px;
+  --radius2: 6px;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Noise texture overlay ──────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity: 0.025;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Grid background ────────────────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.25;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+.page { position: relative; z-index: 1; }
+
+/* ── Header ─────────────────────────────────────────────────────── */
+header {
+  border-bottom: 1px solid var(--border);
+  background: rgba(7,9,15,0.92);
+  backdrop-filter: blur(16px);
+  position: sticky; top: 0; z-index: 200;
+}
+
+.header-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.logo-icon {
+  width: 32px; height: 32px;
+  background: var(--green);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  box-shadow: var(--green-glow);
+  flex-shrink: 0;
+}
+
+.logo-text {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+
+.logo-text span { color: var(--green); }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.live-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid #0ff07a30;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.live-dot {
+  width: 6px; height: 6px;
+  background: var(--green);
+  border-radius: 50%;
+  animation: blink 1.4s infinite;
+}
+
+@keyframes blink {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.2; }
+}
+
+.last-updated {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── Hero ticker ──────────────────────────────────────────────── */
+.ticker-wrap {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+.ticker-label {
+  flex-shrink: 0;
+  background: var(--green);
+  color: #07090f;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 0 14px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  letter-spacing: 1px;
+}
+
+.ticker-track {
+  display: flex;
+  gap: 0;
+  animation: scroll-left 40s linear infinite;
+  white-space: nowrap;
+}
+
+.ticker-track:hover { animation-play-state: paused; }
+
+@keyframes scroll-left {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 28px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  border-right: 1px solid var(--border);
+}
+
+.ticker-item.hit { color: var(--green); }
+.ticker-item.hit .ticker-dot { background: var(--green); }
+
+.ticker-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--muted2);
+  flex-shrink: 0;
+}
+
+/* ── Main content ────────────────────────────────────────────── */
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 28px;
+  align-items: start;
+}
+
+/* ── Stat bar ────────────────────────────────────────────────── */
+.stat-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--green);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.stat-card.active::before { opacity: 1; }
+
+.stat-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.stat-value {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text);
+}
+
+.stat-value.green { color: var(--green); text-shadow: var(--green-glow); }
+.stat-value.red   { color: var(--red); }
+
+.stat-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* ── Section labels ──────────────────────────────────────────── */
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Product cards ───────────────────────────────────────────── */
+.product-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.product-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.15s;
+  cursor: default;
+}
+
+.product-card:hover {
+  border-color: var(--border2);
+  transform: translateY(-1px);
+}
+
+.product-card.in-stock {
+  border-color: #0ff07a30;
+  box-shadow: 0 0 0 1px #0ff07a18, inset 0 0 40px #0ff07a06;
+}
+
+.card-top {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+.retailer-badge {
+  width: 42px; height: 42px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.card-info { min-width: 0; }
+
+.card-name {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 3px;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.card-meta a {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.card-meta a:hover { text-decoration: underline; }
+
+/* Status pill */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.status-pill.in-stock {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid #0ff07a35;
+}
+
+.status-pill.out-of-stock {
+  background: var(--red-bg);
+  color: var(--red);
+  border: 1px solid #ff456025;
+}
+
+.status-pill.error {
+  background: var(--yellow-bg);
+  color: var(--yellow);
+  border: 1px solid #ffc94725;
+}
+
+.status-pill.unknown {
+  background: var(--surface2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.pill-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.status-pill.in-stock .pill-dot { animation: blink 1.2s infinite; }
+
+/* ── In-store strip ──────────────────────────────────────────── */
+.instore-strip {
+  border-top: 1px solid var(--border);
+  padding: 10px 18px;
+  background: var(--bg2);
+}
+
+.instore-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.store-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.store-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.store-chip.in_stock  { border-color: #0ff07a40; color: var(--green); }
+.store-chip.limited   { border-color: #ffc94740; color: var(--yellow); }
+
+/* ── History accordion ───────────────────────────────────────── */
+.history-strip {
+  border-top: 1px solid var(--border);
+}
+
+.history-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 9px 18px;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.15s;
+}
+
+.history-btn:hover { color: var(--text); }
+
+.history-body {
+  display: none;
+  padding: 0 18px 12px;
+}
+
+.history-body.open { display: block; }
+
+.history-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.history-row:last-child { border-bottom: none; }
+.history-status.in_stock    { color: var(--green); }
+.history-status.out_of_stock { color: var(--red); }
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+.sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+/* Alert feed */
+.alert-feed {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.feed-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.feed-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.feed-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--green);
+  background: var(--green-bg);
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.feed-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.feed-list::-webkit-scrollbar { width: 4px; }
+.feed-list::-webkit-scrollbar-track { background: var(--surface); }
+.feed-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.feed-item {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  gap: 10px;
+  align-items: start;
+  transition: background 0.15s;
+}
+
+.feed-item:last-child { border-bottom: none; }
+.feed-item:hover { background: var(--surface2); }
+
+.feed-indicator {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  margin-top: 3px;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px var(--green);
+}
+
+.feed-product {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feed-retailer {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.feed-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted2);
+  margin-top: 2px;
+}
+
+.feed-empty {
+  padding: 32px 16px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted2);
+}
+
+/* Retailer legend */
+.retailer-legend {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.legend-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.legend-item:last-child { border-bottom: none; }
+
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* Refresh bar */
+.refresh-widget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.refresh-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.refresh-track {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.refresh-fill {
+  height: 100%;
+  background: var(--green);
+  width: 0%;
+  border-radius: 2px;
+  transition: width 1s linear;
+  box-shadow: var(--green-glow);
+}
+
+/* ── Loading state ───────────────────────────────────────────── */
+.loading-state {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  gap: 16px;
+}
+
+.spinner {
+  width: 32px; height: 32px;
+  border: 2px solid var(--border);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── Footer ──────────────────────────────────────────────────── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 20px 24px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted2);
+  position: relative; z-index: 1;
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  main {
+    grid-template-columns: 1fr;
+  }
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .sidebar { order: -1; }
+}
+
+@media (max-width: 540px) {
+  .header-inner { padding: 0 16px; }
+  main { padding: 20px 16px 48px; }
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .last-updated { display: none; }
+}
+
+/* ── Animations ──────────────────────────────────────────────── */
+.fade-in {
+  animation: fadeIn 0.4s ease both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ── Header ── -->
+<header>
+  <div class="header-inner">
+    <a class="logo" href="/">
+      <div class="logo-icon">🎴</div>
+      <div class="logo-text">Restock<span>Watch</span></div>
+    </a>
+    <div class="header-right">
+      <div class="live-badge">
+        <div class="live-dot"></div>
+        LIVE
+      </div>
+      <div class="last-updated" id="last-updated">—</div>
+    </div>
+  </div>
+</header>
+
+<!-- ── Ticker ── -->
+<div class="ticker-wrap">
+  <div class="ticker-label">ALERTS</div>
+  <div style="overflow:hidden; flex:1; position:relative;">
+    <div class="ticker-track" id="ticker-track">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- ── Main ── -->
+<main>
+
+  <!-- Stat row -->
+  <div class="stat-row" id="stat-row">
+    <div class="stat-card">
+      <div class="stat-label">Online In Stock</div>
+      <div class="stat-value green" id="stat-instock">—</div>
+      <div class="stat-sub">of <span id="stat-total">—</span> watching</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Stores Available</div>
+      <div class="stat-value green" id="stat-stores">—</div>
+      <div class="stat-sub">locations today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Alerts Today</div>
+      <div class="stat-value" id="stat-alerts">—</div>
+      <div class="stat-sub">restock events</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Last Hit</div>
+      <div class="stat-value" id="stat-last-hit" style="font-size:16px; padding-top:8px;">—</div>
+      <div class="stat-sub" id="stat-last-retailer">—</div>
+    </div>
+  </div>
+
+  <!-- Left: product list -->
+  <div>
+    <div class="section-label">Watching</div>
+    <div class="product-list" id="product-list">
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <div class="loading-text">Connecting to watcher...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: sidebar -->
+  <div class="sidebar">
+
+    <!-- Refresh widget -->
+    <div class="refresh-widget">
+      <div class="refresh-label">
+        <span>AUTO-REFRESH</span>
+        <span id="refresh-countdown">30s</span>
+      </div>
+      <div class="refresh-track">
+        <div class="refresh-fill" id="refresh-fill"></div>
+      </div>
+    </div>
+
+    <!-- Alert feed -->
+    <div class="alert-feed">
+      <div class="feed-header">
+        <div class="feed-title">Recent Hits</div>
+        <div class="feed-count" id="feed-count">0</div>
+      </div>
+      <div class="feed-list" id="feed-list">
+        <div class="feed-empty">No restocks detected yet.<br>Watcher is running...</div>
+      </div>
+    </div>
+
+    <!-- Retailer legend -->
+    <div class="retailer-legend">
+      <div class="legend-header">Retailers</div>
+      <div id="legend-list">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  RestockWatch · Personal Canadian TCG Restock Monitor · Updates every 30s
+</footer>
+</div>
+
+<script>
+const REFRESH_INTERVAL = 30;
+
+const RETAILER_META = {
+  pokemon_center_ca: { label: 'Pokémon Center CA', color: '#e3350d', short: 'PCC' },
+  walmart_ca:        { label: 'Walmart CA',         color: '#0071ce', short: 'WMT' },
+  ebgames_ca:        { label: 'EB Games',            color: '#ff6a00', short: 'EBG' },
+  costco_ca:         { label: 'Costco CA',           color: '#005daa', short: 'CST' },
+  bestbuy_ca:        { label: 'Best Buy CA',         color: '#1f49a0', short: 'BBY' },
+  toysrus_ca:        { label: 'Toys R Us CA',        color: '#e4002b', short: 'TRU' },
+  amazon_ca:         { label: 'Amazon CA',           color: '#ff9900', short: 'AMZ' },
+  sport_chek:        { label: 'Sport Chek',          color: '#c8102e', short: 'SCK' },
+};
+
+// ── Status helpers ──────────────────────────────────────────────────
+function statusClass(s) {
+  return s === 'in_stock' ? 'in-stock'
+       : s === 'out_of_stock' ? 'out-of-stock'
+       : s === 'error' ? 'error'
+       : 'unknown';
+}
+
+function statusLabel(s) {
+  return s === 'in_stock'     ? 'IN STOCK'
+       : s === 'out_of_stock' ? 'OUT OF STOCK'
+       : s === 'error'        ? 'CHECK ERROR'
+       : 'UNKNOWN';
+}
+
+// ── Ticker ──────────────────────────────────────────────────────────
+function buildTicker(alerts, products) {
+  const track = document.getElementById('ticker-track');
+  const items = [];
+
+  // Add restock hits
+  alerts.slice(0, 20).forEach(a => {
+    items.push({ text: `${a.product} @ ${a.retailer}`, time: a.timestamp.slice(11,16), hit: true });
+  });
+
+  // Pad with current statuses if not enough alerts
+  Object.values(products).forEach(p => {
+    const rm = RETAILER_META[p.retailer] || {};
+    items.push({ text: `${p.name} — ${rm.label || p.retailer}`, time: p.last_checked ? p.last_checked.slice(11,16) : '--:--', hit: p.online_status === 'in_stock' });
+  });
+
+  if (!items.length) {
+    items.push({ text: 'No data yet — watcher starting up', time: '', hit: false });
+  }
+
+  // Duplicate for seamless loop
+  const doubled = [...items, ...items];
+  track.innerHTML = doubled.map(i => `
+    <div class="ticker-item ${i.hit ? 'hit' : ''}">
+      <div class="ticker-dot"></div>
+      ${i.text}${i.time ? ' · ' + i.time : ''}
+    </div>
+  `).join('');
+}
+
+// ── Product card ────────────────────────────────────────────────────
+function buildCard(p) {
+  const rm = RETAILER_META[p.retailer] || { label: p.retailer, color: '#888', short: '???' };
+  const sc = statusClass(p.online_status);
+
+  // In-store
+  let instoreHtml = '';
+  if (p.instore_locations && p.instore_locations.length > 0) {
+    const chips = p.instore_locations.map(l => `
+      <div class="store-chip ${l.status}" title="${l.raw || ''}">
+        ${l.status === 'in_stock' ? '✓' : l.status === 'limited' ? '~' : '✗'}
+        ${l.store}
+      </div>
+    `).join('');
+    const avail = p.instore_locations.filter(l => l.status === 'in_stock').length;
+    instoreHtml = `
+      <div class="instore-strip">
+        <div class="instore-header">🏪 IN-STORE — ${avail}/${p.instore_locations.length} AVAILABLE</div>
+        <div class="store-chips">${chips}</div>
+      </div>
+    `;
+  }
+
+  // History
+  let historyHtml = '';
+  if (p.history && p.history.length > 0) {
+    const rows = p.history.slice(0, 8).map(h => `
+      <div class="history-row">
+        <span>${h.timestamp.slice(5,16)}</span>
+        <span class="history-status ${h.to_status}">${h.from_status.replace('_',' ')} → ${h.to_status.replace('_',' ')}</span>
+      </div>
+    `).join('');
+    historyHtml = `
+      <div class="history-strip">
+        <button class="history-btn" onclick="toggleHistory(this)">
+          ▶ &nbsp;HISTORY (${p.history.length})
+        </button>
+        <div class="history-body">${rows}</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="product-card ${sc} fade-in">
+      <div class="card-top">
+        <div class="retailer-badge" style="background:${rm.color}22; color:${rm.color}; border:1px solid ${rm.color}40;">
+          ${rm.short}
+        </div>
+        <div class="card-info">
+          <div class="card-name">${p.name}</div>
+          <div class="card-meta">
+            <span>${rm.label}</span>
+            <span>·</span>
+            <span>${p.last_checked ? 'checked ' + p.last_checked.slice(11,16) : 'pending'}</span>
+            <span>·</span>
+            <a href="${p.url}" target="_blank" rel="noopener">view ↗</a>
+          </div>
+        </div>
+        <div class="status-pill ${sc}">
+          <div class="pill-dot"></div>
+          ${statusLabel(p.online_status)}
+        </div>
+      </div>
+      ${instoreHtml}
+      ${historyHtml}
+    </div>
+  `;
+}
+
+function toggleHistory(btn) {
+  const body = btn.nextElementSibling;
+  body.classList.toggle('open');
+  btn.innerHTML = body.classList.contains('open')
+    ? btn.innerHTML.replace('▶', '▼')
+    : btn.innerHTML.replace('▼', '▶');
+}
+
+// ── Feed ────────────────────────────────────────────────────────────
+function buildFeed(alerts) {
+  const list = document.getElementById('feed-list');
+  const count = document.getElementById('feed-count');
+  count.textContent = alerts.length;
+
+  if (!alerts.length) {
+    list.innerHTML = '<div class="feed-empty">No restocks yet.<br>Watcher is running...</div>';
+    return;
+  }
+
+  list.innerHTML = alerts.slice(0, 20).map(a => {
+    const rm = RETAILER_META[a.retailer_key] || {};
+    return `
+      <div class="feed-item">
+        <div class="feed-indicator"></div>
+        <div>
+          <div class="feed-product">${a.product}</div>
+          <div class="feed-retailer" style="color:${rm.color || '#888'}">${a.retailer}</div>
+          <div class="feed-time">${a.timestamp.slice(5,16)}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Legend ───────────────────────────────────────────────────────────
+function buildLegend(products) {
+  const counts = {};
+  Object.values(products).forEach(p => {
+    counts[p.retailer] = (counts[p.retailer] || 0) + 1;
+  });
+
+  const el = document.getElementById('legend-list');
+  const retailers = Object.keys(counts);
+  if (!retailers.length) {
+    el.innerHTML = '<div style="padding:16px;font-family:var(--font-mono);font-size:10px;color:var(--muted2);">No retailers yet</div>';
+    return;
+  }
+
+  el.innerHTML = retailers.map(rk => {
+    const rm = RETAILER_META[rk] || { label: rk, color: '#888' };
+    return `
+      <div class="legend-item">
+        <div class="legend-dot" style="background:${rm.color}"></div>
+        <span>${rm.label}</span>
+        <span class="legend-count">${counts[rk]} product${counts[rk] > 1 ? 's' : ''}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Stats ────────────────────────────────────────────────────────────
+function buildStats(products, alerts) {
+  const all = Object.values(products);
+  const inStock = all.filter(p => p.online_status === 'in_stock').length;
+  const totalStores = all.reduce((s, p) => s + (p.instore_locations || []).filter(l => l.status === 'in_stock').length, 0);
+
+  // Alerts today
+  const today = new Date().toISOString().slice(0, 10);
+  const todayAlerts = alerts.filter(a => a.timestamp.startsWith(today)).length;
+
+  // Last hit
+  const lastHit = alerts[0];
+
+  document.getElementById('stat-instock').textContent = inStock;
+  document.getElementById('stat-total').textContent = all.length;
+  document.getElementById('stat-stores').textContent = totalStores;
+  document.getElementById('stat-alerts').textContent = todayAlerts;
+
+  if (lastHit) {
+    document.getElementById('stat-last-hit').textContent = lastHit.timestamp.slice(11, 16);
+    document.getElementById('stat-last-retailer').textContent = lastHit.retailer;
+  }
+
+  // Highlight stat cards with data
+  document.querySelectorAll('.stat-card').forEach((c, i) => {
+    c.classList.toggle('active', i === 0 && inStock > 0);
+  });
+}
+
+// ── Main fetch & render ───────────────────────────────────────────────
+async function fetchAndRender() {
+  try {
+    const res  = await fetch('/api/stock');
+    const data = await res.json();
+
+    const products = data.products || {};
+    const alerts   = data.alerts   || [];
+    const keys     = Object.keys(products);
+
+    // Sort: in_stock first, then unknown, error, out_of_stock
+    const order = { in_stock: 0, unknown: 1, error: 2, out_of_stock: 3 };
+    keys.sort((a, b) => (order[products[a].online_status] ?? 9) - (order[products[b].online_status] ?? 9));
+
+    // Render products
+    const list = document.getElementById('product-list');
+    if (!keys.length) {
+      list.innerHTML = `
+        <div class="loading-state">
+          <div class="loading-text">No products found. Is watch.py running?</div>
+        </div>`;
+    } else {
+      list.innerHTML = keys.map(k => buildCard(products[k])).join('');
+    }
+
+    buildTicker(alerts, products);
+    buildFeed(alerts);
+    buildLegend(products);
+    buildStats(products, alerts);
+
+    if (data.last_updated) {
+      document.getElementById('last-updated').textContent =
+        'Updated ' + data.last_updated.slice(11, 16);
+    }
+  } catch (e) {
+    document.getElementById('product-list').innerHTML = `
+      <div class="loading-state">
+        <div class="loading-text">⚠️ Cannot reach server — is server.py running?</div>
+      </div>`;
+  }
+}
+
+// ── Refresh cycle ─────────────────────────────────────────────────────
+let countdown = REFRESH_INTERVAL;
+let timer = null;
+
+function startRefreshCycle() {
+  clearInterval(timer);
+  countdown = REFRESH_INTERVAL;
+
+  const fill  = document.getElementById('refresh-fill');
+  const count = document.getElementById('refresh-countdown');
+
+  fill.style.transition = 'none';
+  fill.style.width = '0%';
+  setTimeout(() => {
+    fill.style.transition = `width ${REFRESH_INTERVAL}s linear`;
+    fill.style.width = '100%';
+  }, 100);
+
+  timer = setInterval(() => {
+    countdown--;
+    count.textContent = countdown + 's';
+    if (countdown <= 0) {
+      clearInterval(timer);
+      fetchAndRender().then(startRefreshCycle);
+    }
+  }, 1000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+fetchAndRender().then(startRefreshCycle);
+</script>
+</body>
+</html>
