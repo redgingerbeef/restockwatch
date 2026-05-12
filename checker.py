@@ -1,11 +1,12 @@
 """
-checker.py — Stock checker using requests + curl_cffi for Cloudflare-protected sites.
-- Regular requests: PCC, Walmart, Amazon
-- curl_cffi (browser TLS fingerprint): EB Games (Cloudflare)
+checker.py — Stock checker.
+- requests: PCC, Walmart, Amazon
+- curl_cffi with retry + backoff: EB Games (Cloudflare)
 """
 
 import requests
-import re
+import time
+import random
 
 try:
     from curl_cffi import requests as cf_requests
@@ -23,6 +24,9 @@ HEADERS = {
     "Connection": "keep-alive",
 }
 
+# Rotate Chrome versions to avoid fingerprint pattern detection
+CF_IMPERSONATE_PROFILES = ["chrome120", "chrome124", "chrome116", "chrome110"]
+
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
 
@@ -39,56 +43,99 @@ def check_online(product: dict) -> dict:
     }
 
     try:
-        # EB Games uses Cloudflare — use curl_cffi to mimic real browser TLS
         if retailer_key == "ebgames_ca":
-            if not CURL_AVAILABLE:
-                result["online_status"] = "error"
-                result["error"] = "curl_cffi not installed"
-                return result
-            resp = cf_requests.get(url, impersonate="chrome124", timeout=20)
+            result = _fetch_ebgames(url, result)
         else:
             resp = SESSION.get(url, timeout=15, allow_redirects=True)
-
-        if resp.status_code == 404:
-            result["online_status"] = "error"
-            result["error"] = "Page not found (404)"
-            return result
-        if resp.status_code == 403:
-            result["online_status"] = "error"
-            result["error"] = "Blocked (403) — Cloudflare"
-            return result
-        if resp.status_code != 200:
-            result["online_status"] = "error"
-            result["error"] = f"HTTP {resp.status_code}"
-            return result
-
-        text = resp.text.lower()
-
-        if retailer_key == "walmart_ca":
-            result = _check_walmart(text, result)
-        elif retailer_key == "pokemon_center_ca":
-            result = _check_pcc(text, result)
-        elif retailer_key == "ebgames_ca":
-            result = _check_ebgames(text, result)
-        elif retailer_key == "amazon_ca":
-            result = _check_amazon(text, result)
-        else:
-            cfg = RETAILER_CONFIGS.get(retailer_key, {})
-            oos = next((t for t in cfg.get("oos_text", []) if t.lower() in text), None)
-            ins = next((t for t in cfg.get("in_stock_text", []) if t.lower() in text), None)
-            if ins and not oos:
-                result["online_status"] = "in_stock"
-                result["online_message"] = "In stock"
-            elif oos:
-                result["online_status"] = "out_of_stock"
-                result["online_message"] = "Out of stock"
+            if resp.status_code == 404:
+                result["online_status"] = "error"
+                result["error"] = "Page not found (404)"
+                return result
+            if resp.status_code != 200:
+                result["online_status"] = "error"
+                result["error"] = f"HTTP {resp.status_code}"
+                return result
+            text = resp.text.lower()
+            if retailer_key == "walmart_ca":
+                result = _check_walmart(text, result)
+            elif retailer_key == "pokemon_center_ca":
+                result = _check_pcc(text, result)
+            elif retailer_key == "amazon_ca":
+                result = _check_amazon(text, result)
             else:
-                result["online_status"] = "unknown"
-                result["online_message"] = "Could not determine status"
+                cfg = RETAILER_CONFIGS.get(retailer_key, {})
+                oos = next((t for t in cfg.get("oos_text", []) if t in text), None)
+                ins = next((t for t in cfg.get("in_stock_text", []) if t in text), None)
+                if ins and not oos:
+                    result["online_status"] = "in_stock"
+                    result["online_message"] = "In stock"
+                elif oos:
+                    result["online_status"] = "out_of_stock"
+                    result["online_message"] = "Out of stock"
 
     except Exception as e:
         result["online_status"] = "error"
         result["error"] = str(e)[:120]
+
+    return result
+
+
+def _fetch_ebgames(url: str, result: dict) -> dict:
+    """
+    Fetch EB Games with curl_cffi + retry logic.
+    Rotates Chrome profiles and waits between attempts.
+    """
+    if not CURL_AVAILABLE:
+        result["online_status"] = "error"
+        result["error"] = "curl_cffi not available"
+        return result
+
+    # Random delay 3–8s before each EB Games request to avoid rate limiting
+    time.sleep(random.uniform(3, 8))
+
+    profile = random.choice(CF_IMPERSONATE_PROFILES)
+
+    for attempt in range(2):
+        try:
+            resp = cf_requests.get(
+                url,
+                impersonate=profile,
+                timeout=25,
+                headers={
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "en-CA,en-US;q=0.9,en;q=0.8",
+                    "Cache-Control": "no-cache",
+                }
+            )
+
+            if resp.status_code == 403:
+                if attempt == 0:
+                    # Wait longer and try a different profile
+                    time.sleep(random.uniform(10, 20))
+                    profile = random.choice(CF_IMPERSONATE_PROFILES)
+                    continue
+                result["online_status"] = "error"
+                result["error"] = "Blocked by Cloudflare (403)"
+                return result
+
+            if resp.status_code == 404:
+                result["online_status"] = "error"
+                result["error"] = "Page not found (404)"
+                return result
+
+            if resp.status_code != 200:
+                result["online_status"] = "error"
+                result["error"] = f"HTTP {resp.status_code}"
+                return result
+
+            return _check_ebgames(resp.text.lower(), result)
+
+        except Exception as e:
+            if attempt == 0:
+                time.sleep(5)
+                continue
+            result["online_status"] = "error"
+            result["error"] = str(e)[:120]
 
     return result
 
